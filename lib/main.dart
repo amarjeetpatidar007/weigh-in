@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
+import 'package:weigh_in/screens/weight_form.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'services/user_provider.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz;
 
-void main() {
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+FlutterLocalNotificationsPlugin();
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
+
   runApp(const MyApp());
 }
 
@@ -29,3 +39,18 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+Future<void> initializeNotificationResponseHandler(BuildContext context) async {
+  await flutterLocalNotificationsPlugin.initialize(
+    const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    ),
+     onDidReceiveNotificationResponse : (didReceiveNotificationResponseCallback) {
+       if (didReceiveNotificationResponseCallback.payload != null) {
+         Navigator.of(context).push(
+           MaterialPageRoute(
+             builder: (context) => WeightRecordForm(),
+           ),
+         );
+       }
+     });}
