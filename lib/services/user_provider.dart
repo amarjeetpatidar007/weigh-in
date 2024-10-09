@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:myapp/models/weight_record.dart';
-import 'package:myapp/services/database_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'package:intl/intl.dart';
+
+import '../main.dart';
+import '../models/weight_record.dart';
+import '../screens/weight_form.dart';
+import 'database_service.dart';
 
 class UserProvider extends ChangeNotifier {
   bool isFirstRun = true;
@@ -24,14 +28,6 @@ class UserProvider extends ChangeNotifier {
     await loadWeightRecords();
   }
 
-  Future<void> updateWeightRecord(int id, double? weight) async {
-    WeightRecord updatedRecord =
-        WeightRecord(id: id, date: 'some_date', weight: weight);
-
-    await DatabaseService().updateWeight(updatedRecord);
-
-    await loadWeightRecords();
-  }
 
   UserProvider() {
     _loadUserData();
@@ -46,9 +42,22 @@ class UserProvider extends ChangeNotifier {
     if (userName != null && hour != null && minute != null) {
       notificationTime = TimeOfDay(hour: hour, minute: minute);
       isFirstRun = false;
+      String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      bool exists = await DatabaseService().recordExistsForToday(today);
+
+      final now = DateTime.now();
+
+      DateTime notificationDateTime = DateTime(now.year, now.month, now.day,
+          notificationTime!.hour, notificationTime!.minute);
+
+      if (!exists && now.isAfter(notificationDateTime)) {
+        await addWeightRecord(today, 0);
+      }
     }
     notifyListeners();
   }
+
+
 
   void saveUserData(String name, TimeOfDay time) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -60,29 +69,27 @@ class UserProvider extends ChangeNotifier {
     notificationTime = time;
     isFirstRun = false;
 
-    // Schedule daily notification
     _scheduleDailyNotification(time);
 
     notifyListeners();
   }
 
   void _scheduleDailyNotification(TimeOfDay time) {
-    FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('app_icon');
+    const initializationSettingsAndroid =  AndroidInitializationSettings('@mipmap/ic_launcher');
     const InitializationSettings initializationSettings =
         InitializationSettings(android: initializationSettingsAndroid);
 
     flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
+
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-      'wt',
+      '0',
       'Channel-wt',
       importance: Importance.max,
       priority: Priority.high,
+
     );
     const NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
@@ -91,8 +98,7 @@ class UserProvider extends ChangeNotifier {
       0,
       'Weight Tracker',
       'Time to record your weight!',
-      // _nextInstanceOfTime(time),
-      tz.TZDateTime.now(tz.local).add(const Duration(seconds: 5)),
+        scheduledDaily(Time(time.hour,time.minute)),
       platformChannelSpecifics,
       androidAllowWhileIdle: true,
       uiLocalNotificationDateInterpretation:
@@ -100,7 +106,26 @@ class UserProvider extends ChangeNotifier {
     );
   }
 
-  // tz.TZDateTime _nextInstanceOfTime(TimeOfDay time) {
-  //   // Schedule notification logic
-  // }
+  static tz.TZDateTime scheduledDaily(Time time) {
+    final now  = tz.TZDateTime.now(tz.local);
+    final scheduledTime =  tz.TZDateTime(tz.local, now.year, now.month, now.day,
+        time.hour, time.minute, time.second);
+        return scheduledTime.isBefore(now)
+        ? scheduledTime.add(const Duration(days: 1)) :
+        scheduledTime;
+    }
+
+  void updateNotificationTime(TimeOfDay newTime) async {
+    flutterLocalNotificationsPlugin.cancel(0);
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('notificationHour', newTime.hour);
+    await prefs.setInt('notificationMinute', newTime.minute);
+
+    notificationTime = newTime;
+
+    _scheduleDailyNotification(newTime);
+
+    notifyListeners();
+  }
+
 }
